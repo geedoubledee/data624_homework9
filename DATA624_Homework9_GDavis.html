@@ -11,7 +11,7 @@
 
 <meta name="author" content="Glen Dale Davis" />
 
-<meta name="date" content="2023-11-16" />
+<meta name="date" content="2023-11-17" />
 
 <title>DATA624 - Homework 9</title>
 
@@ -352,7 +352,7 @@ display: none;
 
 <h1 class="title toc-ignore">DATA624 - Homework 9</h1>
 <h4 class="author">Glen Dale Davis</h4>
-<h4 class="date">2023-11-16</h4>
+<h4 class="date">2023-11-17</h4>
 
 </div>
 
@@ -362,7 +362,9 @@ display: none;
 <pre class="r"><code>library(tidyverse)
 library(mlbench)
 library(randomForest)
-library(caret)</code></pre>
+library(caret)
+library(AppliedPredictiveModeling)
+library(knitr)</code></pre>
 </div>
 <div id="exercise-8.1" class="section level2">
 <h2>Exercise 8.1:</h2>
@@ -382,6 +384,65 @@ the variable importance scores:</li>
 rfImp1 &lt;- varImp(model1, scale = FALSE)</code></pre>
 <p>Did the random forest model significantly use the uninformative
 predictors (<code>V6</code> to <code>V10</code>)?</p>
+<pre class="r"><code>cols &lt;- c(&quot;Predictor&quot;, &quot;Importance&quot;)
+rfImp1 &lt;- rfImp1 |&gt;
+    rownames_to_column()
+colnames(rfImp1) &lt;- cols
+rfImp1 &lt;- rfImp1 |&gt;
+    arrange(desc(Importance))
+knitr::kable(rfImp1, format = &quot;simple&quot;)</code></pre>
+<table>
+<thead>
+<tr class="header">
+<th align="left">Predictor</th>
+<th align="right">Importance</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td align="left">V1</td>
+<td align="right">8.7322354</td>
+</tr>
+<tr class="even">
+<td align="left">V4</td>
+<td align="right">7.6151188</td>
+</tr>
+<tr class="odd">
+<td align="left">V2</td>
+<td align="right">6.4153694</td>
+</tr>
+<tr class="even">
+<td align="left">V5</td>
+<td align="right">2.0235246</td>
+</tr>
+<tr class="odd">
+<td align="left">V3</td>
+<td align="right">0.7635918</td>
+</tr>
+<tr class="even">
+<td align="left">V6</td>
+<td align="right">0.1651112</td>
+</tr>
+<tr class="odd">
+<td align="left">V7</td>
+<td align="right">-0.0059617</td>
+</tr>
+<tr class="even">
+<td align="left">V10</td>
+<td align="right">-0.0749448</td>
+</tr>
+<tr class="odd">
+<td align="left">V9</td>
+<td align="right">-0.0952927</td>
+</tr>
+<tr class="even">
+<td align="left">V8</td>
+<td align="right">-0.1663626</td>
+</tr>
+</tbody>
+</table>
+<p>No, the estimated variable importance scores are near zero for the
+uninformative predictors (<code>V6</code> to <code>V10</code>).</p>
 <ul>
 <li>Now add an additional predictor that is highly correlated with one
 of the informative predictors. For example:</li>
@@ -392,6 +453,161 @@ cor(simulated$duplicate1, simulated$V1)</code></pre>
 <p>Fit another random forest model to these data. Did the importance
 score for <code>V1</code> change? What happens when you add another
 predictor that is also highly correlated with <code>V1</code>?</p>
+<pre class="r"><code>model2 &lt;- randomForest(y ~ ., data = simulated,
+                       importance = TRUE,
+                       ntree = 1000)
+rfImp2 &lt;- varImp(model2, scale = FALSE)
+rfImp2 &lt;- rfImp2 |&gt;
+    rownames_to_column()
+colnames(rfImp2) &lt;- cols
+rfImp2 &lt;- rfImp2 |&gt;
+    arrange(desc(Importance))
+knitr::kable(rfImp2, format = &quot;simple&quot;)</code></pre>
+<table>
+<thead>
+<tr class="header">
+<th align="left">Predictor</th>
+<th align="right">Importance</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td align="left">V4</td>
+<td align="right">7.0475224</td>
+</tr>
+<tr class="even">
+<td align="left">V2</td>
+<td align="right">6.0689606</td>
+</tr>
+<tr class="odd">
+<td align="left">V1</td>
+<td align="right">5.6911997</td>
+</tr>
+<tr class="even">
+<td align="left">duplicate1</td>
+<td align="right">4.2833158</td>
+</tr>
+<tr class="odd">
+<td align="left">V5</td>
+<td align="right">1.8723844</td>
+</tr>
+<tr class="even">
+<td align="left">V3</td>
+<td align="right">0.6297022</td>
+</tr>
+<tr class="odd">
+<td align="left">V6</td>
+<td align="right">0.1356906</td>
+</tr>
+<tr class="even">
+<td align="left">V10</td>
+<td align="right">0.0289481</td>
+</tr>
+<tr class="odd">
+<td align="left">V9</td>
+<td align="right">0.0084044</td>
+</tr>
+<tr class="even">
+<td align="left">V7</td>
+<td align="right">-0.0134564</td>
+</tr>
+<tr class="odd">
+<td align="left">V8</td>
+<td align="right">-0.0437056</td>
+</tr>
+</tbody>
+</table>
+<p>As a result of adding <code>duplicate1</code>, a predictor that was
+highly correlated with <code>V1</code>, the estimated importance score
+for <code>V1</code> decreased from <span class="math inline">\(8.73\)</span> to <span class="math inline">\(5.69\)</span>. <code>V1</code> was originally the
+most important variable, but now <code>V4</code> and <code>V2</code> are
+both considered more important than <code>V1</code>. The estimated
+importance score of <span class="math inline">\(4.28\)</span> that
+<code>duplicate1</code> received is a little less than 50 percent of the
+original estimated importance score for <code>V1</code>.</p>
+<p>We add a second predictor that is highly correlated with
+<code>V1</code> to see what happens.</p>
+<pre class="r"><code>e &lt;- seq(-0.5, 0.5, 0.01)
+simulated$duplicate2 &lt;- simulated$V1 * (2 - sample(e, 200, replace = TRUE))
+cor(simulated$duplicate2, simulated$V1)</code></pre>
+<pre><code>## [1] 0.964375</code></pre>
+<pre class="r"><code>model3 &lt;- randomForest(y ~ ., data = simulated,
+                       importance = TRUE,
+                       ntree = 1000)
+rfImp3 &lt;- varImp(model3, scale = FALSE)
+rfImp3 &lt;- rfImp3 |&gt;
+    rownames_to_column()
+colnames(rfImp3) &lt;- cols
+rfImp3 &lt;- rfImp3 |&gt;
+    arrange(desc(Importance))
+knitr::kable(rfImp3, format = &quot;simple&quot;)</code></pre>
+<table>
+<thead>
+<tr class="header">
+<th align="left">Predictor</th>
+<th align="right">Importance</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td align="left">V4</td>
+<td align="right">7.1901547</td>
+</tr>
+<tr class="even">
+<td align="left">V2</td>
+<td align="right">6.7210069</td>
+</tr>
+<tr class="odd">
+<td align="left">V1</td>
+<td align="right">3.9176362</td>
+</tr>
+<tr class="even">
+<td align="left">duplicate2</td>
+<td align="right">3.5380604</td>
+</tr>
+<tr class="odd">
+<td align="left">duplicate1</td>
+<td align="right">3.1250315</td>
+</tr>
+<tr class="even">
+<td align="left">V5</td>
+<td align="right">1.8034213</td>
+</tr>
+<tr class="odd">
+<td align="left">V3</td>
+<td align="right">0.4269919</td>
+</tr>
+<tr class="even">
+<td align="left">V6</td>
+<td align="right">0.0889672</td>
+</tr>
+<tr class="odd">
+<td align="left">V7</td>
+<td align="right">0.0758502</td>
+</tr>
+<tr class="even">
+<td align="left">V10</td>
+<td align="right">0.0416157</td>
+</tr>
+<tr class="odd">
+<td align="left">V9</td>
+<td align="right">-0.0317967</td>
+</tr>
+<tr class="even">
+<td align="left">V8</td>
+<td align="right">-0.1025550</td>
+</tr>
+</tbody>
+</table>
+<p>Adding <code>duplicate2</code>, another predictor that was highly
+correlated with <code>V1</code>, decreased the estimated importance
+score for <code>V1</code> even further to <span class="math inline">\(3.92\)</span>. With three highly correlated
+variables, <code>duplicate1</code> and <code>duplicate2</code> each
+received estimated variable importance scores equal to approximately 35
+to 40 percent of the original estimated variable importance score for
+<code>V1</code>. We see that the more correlated variables we have, the
+lower we can expect the estimates to be for their individual variable
+importance scores.</p>
 <ul>
 <li><p>Use the <code>cforest</code> function in the <code>party</code>
 package to fit a random forest model using conditional inference trees.

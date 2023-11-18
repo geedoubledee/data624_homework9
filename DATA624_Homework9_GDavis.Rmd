@@ -16,6 +16,8 @@ library(tidyverse)
 library(mlbench)
 library(randomForest)
 library(caret)
+library(AppliedPredictiveModeling)
+library(knitr)
 
 ```
 
@@ -44,17 +46,76 @@ rfImp1 <- varImp(model1, scale = FALSE)
 
 Did the random forest model significantly use the uninformative predictors (`V6` to `V10`)?
 
+```{r ex8_1c}
+cols <- c("Predictor", "Importance")
+rfImp1 <- rfImp1 |>
+    rownames_to_column()
+colnames(rfImp1) <- cols
+rfImp1 <- rfImp1 |>
+    arrange(desc(Importance))
+knitr::kable(rfImp1, format = "simple")
+
+```
+
+No, the estimated variable importance scores are near zero for the uninformative predictors (`V6` to `V10`).
+
 * Now add an additional predictor that is highly correlated with one of the informative predictors. For example:
 
-```{r ex8_1c}
+```{r ex8_1d}
 simulated$duplicate1 <- simulated$V1 + rnorm(200) * .1
 cor(simulated$duplicate1, simulated$V1)
 
 ```
-                           
+
 Fit another random forest model to these data. Did the importance score for `V1` change? What happens when you add another predictor that is also highly correlated with `V1`?
 
+```{r ex8_1e}
+model2 <- randomForest(y ~ ., data = simulated,
+                       importance = TRUE,
+                       ntree = 1000)
+rfImp2 <- varImp(model2, scale = FALSE)
+rfImp2 <- rfImp2 |>
+    rownames_to_column()
+colnames(rfImp2) <- cols
+rfImp2 <- rfImp2 |>
+    arrange(desc(Importance))
+knitr::kable(rfImp2, format = "simple")
+
+```
+
+As a result of adding `duplicate1`, a predictor that was highly correlated with `V1`, the estimated importance score for `V1` decreased from $8.73$ to $5.69$. `V1` was originally the most important variable, but now `V4` and `V2` are both considered more important than `V1`. The estimated importance score of $4.28$ that `duplicate1` received is a little less than 50 percent of the original estimated importance score for `V1`.
+
+We add a second predictor that is highly correlated with `V1` to see what happens.
+
+```{r ex8_1f}
+e <- seq(-0.5, 0.5, 0.01)
+simulated$duplicate2 <- simulated$V1 * (2 - sample(e, 200, replace = TRUE))
+cor(simulated$duplicate2, simulated$V1)
+
+```
+
+```{r ex8_1g}
+model3 <- randomForest(y ~ ., data = simulated,
+                       importance = TRUE,
+                       ntree = 1000)
+rfImp3 <- varImp(model3, scale = FALSE)
+rfImp3 <- rfImp3 |>
+    rownames_to_column()
+colnames(rfImp3) <- cols
+rfImp3 <- rfImp3 |>
+    arrange(desc(Importance))
+knitr::kable(rfImp3, format = "simple")
+
+```
+
+Adding `duplicate2`, another predictor that was highly correlated with `V1`, decreased the estimated importance score for `V1` even further to $3.92$. With three highly correlated variables, `duplicate1` and `duplicate2` each received estimated variable importance scores equal to approximately 35 to 40 percent of the original estimated variable importance score for `V1`. We see that increasing the number of correlated variables decreases estimates for these correlated variables' individual variable importance scores. The relationship is approximately inverse.
+
 * Use the `cforest` function in the `party` package to fit a random forest model using conditional inference trees. The `party` package function `varimp` can calculate predictor importance. The `conditional` argument of that function toggles between the traditional importance measure and the modified version described in Strobl et al. (2007). Do these importances show the same pattern as the traditional random forest model?
+
+```{r ex8_1h}
+
+
+```
 
 * Repeat this process with different tree models, such as boosted trees and Cubist. Does the same pattern occur?
 
