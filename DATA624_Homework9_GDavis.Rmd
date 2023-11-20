@@ -18,6 +18,10 @@ library(randomForest)
 library(caret)
 library(AppliedPredictiveModeling)
 library(knitr)
+library(party)
+library(gbm)
+library(Cubist)
+library(rpart)
 
 ```
 
@@ -112,39 +116,280 @@ Adding `duplicate2`, another predictor that was highly correlated with `V1`, dec
 
 * Use the `cforest` function in the `party` package to fit a random forest model using conditional inference trees. The `party` package function `varimp` can calculate predictor importance. The `conditional` argument of that function toggles between the traditional importance measure and the modified version described in Strobl et al. (2007). Do these importances show the same pattern as the traditional random forest model?
 
-```{r ex8_1h}
+First, we remove the collinear variables we created so that we're only comparing the estimated importance scores of the original predictors `V1` to `V10`. 
 
+```{r ex8_1h}
+duplicates <- c("duplicate1", "duplicate2")
+simulated <- simulated |>
+    select(-all_of(duplicates))
 
 ```
 
+Then we estimate the unconditional importance scores. 
+
+```{r ex8_1i}
+model4 <- cforest(y ~ ., data = simulated,
+                  controls = cforest_unbiased(ntree = 500))
+cfImp4_trad <- varimp(model4, conditional = FALSE)
+cfImp4_trad <- as.data.frame(cfImp4_trad) |>
+    rownames_to_column()
+cols <- c("Predictor", "Unconditional_Importance")
+colnames(cfImp4_trad) <- cols
+cfImp4_trad <- cfImp4_trad |>
+    arrange(desc(Unconditional_Importance))
+knitr::kable(cfImp4_trad, format = "simple")
+
+```
+
+Next we estimate the conditional importance scores. 
+
+```{r ex8_1j}
+cfImp4_mod <- varimp(model4, conditional = TRUE)
+cfImp4_mod <- as.data.frame(cfImp4_mod) |>
+    rownames_to_column()
+cols <- c("Predictor", "Conditional_Importance")
+colnames(cfImp4_mod) <- cols
+cfImp4_mod <- cfImp4_mod |>
+    arrange(desc(Conditional_Importance))
+knitr::kable(cfImp4_mod, format = "simple")
+
+```
+
+The estimated unconditional importance scores maintain the same order of importance as the traditional random forest model's estimated importance scores, although `V3`'s importance is estimated to be much closer to zero in the `cforest` model than its importance in the traditional random forest model was. 
+
+The estimated conditional importance scores shift the order of importance such that `V4` is now the most important variable, and `V3` no longer makes the top five most important predictors. `V6`, `V7`, and `V9`, which we know to be irrelevant, all outrank `V3` in estimated conditional importance.
+
 * Repeat this process with different tree models, such as boosted trees and Cubist. Does the same pattern occur?
+
+We create a boosted tree model using the `gbm` function from the `gbm` library, and we extract the estimated relative importance scores using the `summary.gbm` function from the same library.
+
+```{r ex8_1k}
+model5 <- gbm(y ~ ., data = simulated,
+                  distribution = "gaussian", n.trees = 500)
+gbmImp5 <- summary.gbm(model5, n.trees = 500, order = TRUE, plotit = FALSE)
+rownames(gbmImp5) <- NULL
+cols <- c("Predictor", "Relative_Importance")
+colnames(gbmImp5) <- cols
+knitr::kable(gbmImp5, format = "simple")
+
+```
+
+The top five most important predictors are `V1` to `V5` in the boosted tree model, but unlike the rankings in the traditional random forest model, `V4` is ranked higher than `V1`.
+
+We create a Cubist model using the `cubist` function from the `Cubist` library and extract the estimated importance scores using the `varImp` function from the `caret` library.
+
+```{r }
+model6 <- cubist(simulated |> select(-y), simulated$y)
+cubImp6 <- varImp(model6)
+cubImp6 <- cubImp6 |>
+    rownames_to_column()
+cols <- c("Predictor", "Importance")
+colnames(cubImp6) <- cols
+cubImp6 <- cubImp6 |>
+    arrange(desc(Importance))
+knitr::kable(cubImp6, format = "simple")
+
+```
+
+`V1`, `V2`, `V4`, and `V5` are estimated to be the only important predictors here, and they all have equal scores. `V3` has been lumped in with the unimportant predictors again.
 
 ## Exercise 8.2:
 
 Use a simulation to show tree bias with different granularities.
 
+We create predictor variables with lower variance `a` through `d`, and we create predictor variables with higher variance `e` and `f`. The response variable `y` is a simple sum of the predictor variables `a` through `f` and a random error term. We then estimate the importance of the predictor variables. 
+
 ```{r ex8_2a}
+a <- as.data.frame(rnorm(200, mean = 1000, sd = 0.001))
+b <- as.data.frame(rnorm(200, mean = 1000, sd = 0.01))
+c <- as.data.frame(rnorm(200, mean = 1000, sd = 0.1))
+d <- as.data.frame(rnorm(200, mean = 1000, sd = 1))
+e <- as.data.frame(rnorm(200, mean = 1000, sd = 10))
+f <- as.data.frame(rnorm(200, mean = 1000, sd = 100))
+error <- seq(-100, 100, 10)
+z <- a |>
+    bind_cols(b, c, d, e, f)
+colnames(z) <- c("a", "b", "c", "d", "e", "f")
+z <- z |>
+    mutate(y = a + b + c + d + e + f + sample(error, size = 1))
+model7 <- randomForest(y ~ ., data = z,
+                       importance = TRUE,
+                       ntree = 1000)
+rfImp7 <- varImp(model7, scale = FALSE)
+rfImp7 <- rfImp7 |>
+    rownames_to_column()
+colnames(rfImp7) <- cols
+rfImp7 <- rfImp7 |>
+    arrange(desc(Importance))
+knitr::kable(rfImp7, format = "simple")
 
 ```
+
+The highest variance predictor, `f`, is estimated to be much more important than any of the other predictors. However, `a` and `b`, lower variance predictors, are estimated to be more important than `e`, a higher variance predictor.
 
 ## Exercise 8.3:
 
 In stochastic gradient boosting the bagging fraction and learning rate will govern the construction of the trees as they are guided by the gradient. Although the optimal values of these parameters should be obtained through the tuning process, it is helpful to understand how the magnitudes of these parameters affect magnitudes of variable importance. Figure 8.24 provides the variable importance plots for boosting using two extreme values for the bagging fraction (0.1 and 0.9) and the learning rate (0.1 and 0.9) for the solubility data. The left-hand plot has both parameters set to 0.1,  and the right-hand plot has both set to 0.9:
 
+![](https://raw.githubusercontent.com/geedoubledee/data624_homework9/main/ex8_3.png)
+
 * Why does the model on the right focus its importance on just the first few of predictors, whereas the model on the left spreads importance across more predictors?
+
+The model on the right has a high bagging fraction, so its trees are more diverse. Thus, overfitting has been reduced, and fewer predictors with more relative importance each have been favored over many predictors with less relative importance each. However, its learning rate is also high, so it's possible the wrong small number of predictors have been favored. 
 
 * Which model do you think would be more predictive of other samples?
 
+The model on the right would normally be better at predicting on new data since it doesn't suffer form overfitting, but there is some uncertainty due to its high learning rate. 
+
 * How would increasing interaction depth affect the slope of predictor importance for either model in Fig. 8.24?
 
-![](https://raw.githubusercontent.com/geedoubledee/data624_homework9/main/ex8_3.png)
+Increasing interaction depth should reduce the slope of predictor importance for either model. That is to say, the drop from most important predictor to least important predictor should become more gradual. 
 
 ## Exercise 8.7:
 
 Refer to Exercises 6.3 and 7.5 which describe a chemical manufacturing process. Use the same data imputation, data splitting, and pre-processing steps as before and train several tree-based models:
 
+```{r ex8_7a, warning = FALSE, message = FALSE}
+data(ChemicalManufacturingProcess)
+x <- colSums(is.na(ChemicalManufacturingProcess))
+missing_val_cols <- names(x[x > 0])
+ChemicalManufacturingProcess <- ChemicalManufacturingProcess |>
+    VIM::kNN(variable = missing_val_cols, k = 15, numFun = weighted.mean,
+             weightDist = TRUE, imp_var = FALSE)
+nzv_predictors <- nearZeroVar(ChemicalManufacturingProcess |> select(-Yield),
+                              names = TRUE, saveMetrics = FALSE)
+ChemicalManufacturingProcess <- ChemicalManufacturingProcess |>
+    select(-all_of(nzv_predictors))
+rows <- sample(nrow(ChemicalManufacturingProcess))
+ChemicalManufacturingProcess <- ChemicalManufacturingProcess[rows, ]
+sample <- sample(c(TRUE, FALSE), nrow(ChemicalManufacturingProcess),
+                 replace=TRUE, prob=c(0.7,0.3))
+train_CMP <- ChemicalManufacturingProcess[sample, ]
+train_CMP_x <- train_CMP |>
+    select(-Yield)
+train_CMP_y <- train_CMP$Yield
+train_CMP_y <- as.numeric(train_CMP_y)
+test_CMP <- ChemicalManufacturingProcess[!sample, ]
+test_CMP_x <- test_CMP |>
+    select(-Yield)
+test_CMP_y <- test_CMP$Yield
+test_CMP_y <- as.numeric(test_CMP_y)
+
+```
+We train a `Single Regression Tree`, `Boosted Tree`, and `Cubist` model.
+
+```{r ex8_7b}
+rpartTune <- train(train_CMP_x, train_CMP_y,
+                   method = "rpart2",
+                   tuneLength = 10,
+                   trControl = trainControl(method = "cv"))
+gbmGrid <- expand.grid(interaction.depth = seq(1, 7, by = 2),
+                       n.trees = seq(100, 1000, by = 50),
+                       shrinkage = c(0.01, 0.1),
+                       n.minobsinnode = 10)
+gbmTune <- train(train_CMP_x, train_CMP_y,
+                 method = "gbm",
+                 tuneGrid = gbmGrid,
+                 verbose = FALSE)
+cubistTuned <- train(train_CMP_x, train_CMP_y,
+                    method = "cubist")
+
+
+```
+
 * Which tree-based regression model gives the optimal resampling and test set  performance?
+
+```{r ex8_7c}
+test_pred1 <- predict(rpartTune, test_CMP_x)
+test_pred2 <- predict(gbmTune, test_CMP_x)
+test_pred3 <- predict(cubistTuned, test_CMP_x)
+test_rsq1 <- as.numeric(R2(test_pred1, test_CMP_y, form = "traditional"))
+test_rsq2 <- as.numeric(R2(test_pred2, test_CMP_y, form = "traditional"))
+test_rsq3 <- as.numeric(R2(test_pred3, test_CMP_y, form = "traditional"))
+test_rmse1 <- as.numeric(RMSE(test_pred1, test_CMP_y))
+test_rmse2 <- as.numeric(RMSE(test_pred2, test_CMP_y))
+test_rmse3 <- as.numeric(RMSE(test_pred3, test_CMP_y))
+models <- c("Single Regression Tree", "Boosted Tree", "Cubist")
+rsqs <- round(c(test_rsq1, test_rsq2, test_rsq3), 4)
+rmses <- round(c(test_rmse1, test_rmse2, test_rmse3), 4)
+tbl <- as.data.frame(cbind(models, rsqs, rmses))
+cols <- c("Model", "Predictive_RSquared", "RMSE")
+colnames(tbl) <- cols
+tbl <- tbl |>
+    arrange(desc(Predictive_RSquared))
+knitr::kable(tbl, format = "simple")
+
+```
+
+The `Cubist` model has the highest predictive $R^2$ and the lowest $RMSE$.
 
 * Which predictors are most important in the optimal tree-based regression model? Do either the biological or process variables dominate the list? How do the top 10 important predictors compare to the top 10 predictors from the optimal linear and nonlinear models?
 
+The top 20 most important predictors in the `Cubist` model are:
+
+```{r ex8_7d, warning = FALSE, message = FALSE}
+cubistImportance <- varImp(cubistTuned)
+cubistImportance <- cubistImportance$importance |>
+    rownames_to_column()
+cols <- c("Predictor", "Importance")
+colnames(cubistImportance) <- cols
+cubistImportance <- cubistImportance |>
+    arrange(desc(Importance)) |>
+    top_n(n = 20)
+knitr::kable(cubistImportance, format = "simple")
+
+```
+
+The manufacturing process variables dominate the list.
+
+The top 10 most important predictors in the optimal linear and nonlinear models were:
+
+```{r ex8_7e, warning = FALSE, message = FALSE}
+top_10_linear <- c("ManufacturingProcess09", "ManufacturingProcess32",
+                   "ManufacturingProcess34", "ManufacturingProcess45",
+                   "ManufacturingProcess29", "BiologicalMaterial05",
+                   "BiologicalMaterial03", "ManufacturingProcess06",
+                   "ManufacturingProcess04", "ManufacturingProcess01")
+top_10_nonlinear <- c("ManufacturingProcess32", "ManufacturingProcess36",
+                      "ManufacturingProcess37", "ManufacturingProcess06",
+                      "ManufacturingProcess09", "BiologicalMaterial09",
+                      "BiologicalMaterial05", "ManufacturingProcess04",
+                      "ManufacturingProcess17", "ManufacturingProcess20")
+top_10 <- as.data.frame(top_10_linear) |>
+    bind_cols(top_10_nonlinear)
+colnames(top_10) <- c("Linear Top 10", "Nonlinear Top 10")
+knitr::kable(top_10, format = "simple")
+
+```
+
+The predictors that are in the top 10 of the optimal tree-based regression model, but not in the top 10 of either of the optimal linear or nonlinear regression models, are:
+
+```{r ex8_7f}
+x <- cubistImportance[1:10, 1]
+x <- x[!x %in% unique(c(top_10_linear, top_10_nonlinear))]
+x <- as.data.frame(x)
+colnames(x) <- "Predictor"
+knitr::kable(x, format = "simple")
+
+```
+
+The predictors that are in the top 10 of the optimal linear or nonlinear regression models, but not in the top 10 of the optimal tree-based regression model, are:
+
+```{r ex8_7g}
+x <- unique(c(top_10_linear, top_10_nonlinear))
+x <- x[!x %in% cubistImportance[1:10, 1]]
+x <- as.data.frame(x)
+colnames(x) <- "Predictor"
+knitr::kable(x, format = "simple")
+
+```
+
 * Plot the optimal single tree with the distribution of yield in the terminal nodes. Does this view of the data provide additional knowledge about the biological or process predictors and their relationship with yield?
+
+```{r ex8_7h}
+p1 <- dotplot(cubistTuned$finalModel, what = "splits")
+p1
+
+```
+
+We unfortunately aren't quite sure how to interpret the only plot we're able to produce for `Cubist` models.
